@@ -9,7 +9,7 @@
  * inspect which signals the processor tries to assert when.
  */
 
-module skeleton(clock, reset, q_imem, data_writeReg);
+module skeleton(clock, reset, q_imem, data_writeReg, global_debug_out);
     input clock, reset;
 
     /** IMEM **/
@@ -31,11 +31,11 @@ module skeleton(clock, reset, q_imem, data_writeReg);
     wire wren;
     wire [31:0] q_dmem;
     dmem my_dmem(
-        .address    (/* 12-bit wire */),       // address of data
+        .address    (address_dmem),       // address of data
         .clock      (~clock),                  // may need to invert the clock
-        .data	    (/* 32-bit data in */),    // data you want to write
-        .wren	    (/* 1-bit signal */),      // write enable
-        .q          (/* 32-bit data out */)    // data from dmem
+        .data	    (data),    // data you want to write
+        .wren	    (wren),      // write enable
+        .q          (q_dmem)    // data from dmem
     );
 
     /** REGFILE **/
@@ -57,6 +57,7 @@ module skeleton(clock, reset, q_imem, data_writeReg);
     );
 
     /** PROCESSOR **/
+	 output [31:0] global_debug_out;
     processor my_processor(
         // Control signals
         clock,                          // I: The master clock
@@ -79,7 +80,8 @@ module skeleton(clock, reset, q_imem, data_writeReg);
         ctrl_readRegB,                  // O: Register to read from port B of regfile
         data_writeReg,                  // O: Data to write to for regfile
         data_readRegA,                  // I: Data from port A of regfile
-        data_readRegB                   // I: Data from port B of regfile
+        data_readRegB,                   // I: Data from port B of regfile
+		  global_debug_out
     );
 
 endmodule

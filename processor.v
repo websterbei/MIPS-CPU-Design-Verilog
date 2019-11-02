@@ -69,7 +69,8 @@ module processor(
     ctrl_readRegB,                  // O: Register to read from port B of regfile
     data_writeReg,                  // O: Data to write to for regfile
     data_readRegA,                  // I: Data from port A of regfile
-    data_readRegB                   // I: Data from port B of regfile
+    data_readRegB,                   // I: Data from port B of regfile
+	 global_debug_out
 );
     // Control signals
     input clock, reset;
@@ -91,8 +92,10 @@ module processor(
     input [31:0] data_readRegA, data_readRegB;
 
     /* YOUR CODE STARTS HERE */
+	 output [31:0] global_debug_out;
 	 
-	 wire global_stall = multdiv_stall;
+	 
+	 wire global_stall = multdiv_stall | sw_lw_stall;
 	 
 	 // PC update
 	 wire [31:0] next_PC, current_PC;
@@ -100,7 +103,7 @@ module processor(
 	 alu PC_adder(current_PC, 32'd1, 5'b00000, 5'b00000,
 						  next_PC, unused_isNotEqual, unused_isLessThan, unused_overflow);
 	 ThirtyTwoBitRegister PC_register(next_PC, clock, ~global_stall, reset, current_PC);
-	 assign address_imem = current_PC;
+	 assign address_imem = current_PC[11:0];
 	 
 	 // Fetch stage
 	 
@@ -119,21 +122,23 @@ module processor(
 	 wire [4:0] shamt = instruction_at_D[11:7];
 	 wire [4:0] ALU_op = R_type ? R_type_ALU_op : 5'b00000;
 	
-	 assign ctrl_readRegA = instruction_at_D[21:17]; //RS_register
-	 assign ctrl_readRegB = instruction_at_D[16:12]; //RT_register
-	 
 	 wire [4:0] rd_register = instruction_at_D[26:22];
 	 
+	 assign ctrl_readRegA = instruction_at_D[21:17]; //RS_register
+	 assign ctrl_readRegB = R_type ? instruction_at_D[16:12] : rd_register; //RT_register
+	 
 	 wire [31:0] rs_val = data_readRegA;
-	 wire [31:0] rt_val = data_readRegB;
+	 wire [31:0] rt_or_rd_val = data_readRegB;
 	 wire [16:0] immediate_val = instruction_at_D[16:0];
 	 wire [31:0] sign_extended_immediate_val = {{15{immediate_val[16]}}, immediate_val};
 	 
 	 wire [31:0] operandA = rs_val;
-	 wire [31:0] operandB = R_type ? rt_val : sign_extended_immediate_val;
+	 wire [31:0] operandB = R_type ? rt_or_rd_val : sign_extended_immediate_val;
+	 wire [31:0] rd_val = I_type ? rt_or_rd_val : 32'd0; //take care of the sw instruction, need to load rd
+	 
 	 
 	 // D/X stage
-	 wire [31:0] operandA_at_X, operandB_at_X, instruction_at_X;
+	 wire [31:0] operandA_at_X, operandB_at_X, instruction_at_X, rd_val_at_X;
 	 wire [4:0] ALU_op_at_X, shamt_at_X, rd_register_at_X;
 	 
 	 ThirtyTwoBitRegister DX_RS_Latch(operandA, clock, ~global_stall, reset, operandA_at_X);
@@ -142,6 +147,7 @@ module processor(
 	 FiveBitRegister DX_shamt_Latch(shamt, clock, ~global_stall, reset, shamt_at_X);
 	 FiveBitRegister DX_RD_register_Latch(rd_register, clock, ~global_stall, reset, rd_register_at_X);
 	 ThirtyTwoBitRegister DX_instruction_Latch(instruction_at_D, clock, ~global_stall, reset, instruction_at_X);
+	 ThirtyTwoBitRegister DX_RD_val_Latch(rd_val, clock, ~global_stall, reset, rd_val_at_X);
 	
 	 // Execute stage
 	 wire is_add = (instruction_at_X[31:27] == 5'b00000) & (instruction_at_X[6:2] == 5'b00000);
@@ -180,17 +186,28 @@ module processor(
 	 wire [31:0] compute_unit_output = exception_occurred ? rstatus_val : multdiv_ready ? multdiv_output : ALU_output;
 
 	 // X/M stage
-	 wire [31:0] compute_unit_output_at_M, instruction_at_M;
+	 wire [31:0] compute_unit_output_at_M, instruction_at_M, rd_val_at_M;
 	 wire [4:0] register_to_write_at_M;
 	 ThirtyTwoBitRegister XM_instruction_Latch(instruction_at_X, clock, ~global_stall, reset, instruction_at_M);
 	 ThirtyTwoBitRegister XM_ALU_output_Latch(compute_unit_output, clock, ~global_stall, reset, compute_unit_output_at_M);
 	 FiveBitRegister XM_register_to_write_Latch(register_to_write, clock, ~global_stall, reset, register_to_write_at_M);
-
+	 ThirtyTwoBitRegister XM_RD_val_Latch(rd_val_at_X, clock, ~global_stall, reset, rd_val_at_M);
+	 
 	 // Memory stage
-	 assign address_dmem = 32'd0;
-	 assign data = 32'd0;
-	 assign wren = 1'b0;
-	 wire [31:0] data_to_write = compute_unit_output_at_M;
+	 wire is_sw = (instruction_at_M[31:27] == 5'b00111);
+	 wire is_lw = (instruction_at_M[31:27] == 5'b01000);
+	 assign wren = is_sw;
+	 assign address_dmem = compute_unit_output_at_M[11:0];
+	 assign data = rd_val_at_M;
+	 
+	 wire wait_for_sw_lw_next, wait_for_sw_lw;
+	 assign waiting_for_sw_lw_next = (~waiting_for_sw_lw) & (is_sw | is_lw);
+	 dffe_ref sw_lw_status_Latch(waiting_for_sw_lw, waiting_for_sw_lw_next, clock, is_sw|is_lw, reset);
+	 
+	 wire sw_lw_stall = waiting_for_sw_lw_next;
+	 wire [31:0] data_to_write = is_lw ? q_dmem : compute_unit_output_at_M;
+	 
+	 assign global_debug_out = q_dmem;
 	 
 	 // M/W stage
 	 wire [31:0] data_to_write_at_W, instruction_at_W;
@@ -202,6 +219,6 @@ module processor(
 	 // Write stage
 	 assign ctrl_writeReg = register_to_write_at_W;
 	 assign data_writeReg = data_to_write_at_W;
-	 assign ctrl_writeEnable = 1'b1;
+	 assign ctrl_writeEnable = (instruction_at_W[31:27] == 5'b00000) | (instruction_at_W[31:27] == 5'b00101) | (instruction_at_W[31:27] == 5'b01000);
 	 
 endmodule 
