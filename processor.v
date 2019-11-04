@@ -97,27 +97,51 @@ module processor(
 	 
 	 wire global_stall = multdiv_stall | sw_lw_stall;
 	 
-	 // PC update
-	 wire [31:0] next_PC, current_PC;
-	 wire unused_isNotEqual, unused_isLessThan, unused_overflow;
-	 alu PC_adder(current_PC, 32'd1, 5'b00000, 5'b00000,
-						  next_PC, unused_isNotEqual, unused_isLessThan, unused_overflow);
-	 ThirtyTwoBitRegister PC_register(next_PC, clock, ~global_stall, reset, current_PC);
-	 assign address_imem = current_PC[11:0];
-	 
 	 // Fetch stage
+	 wire is_j_at_pre = (q_imem[31:27] == 5'b00001);
+	 wire is_bne_at_pre = (q_imem[31:27] == 5'b00010);
+	 wire is_jal_at_pre = (q_imem[31:27] == 5'b00011);
+	 wire is_jr_at_pre = (q_imem[31:27] == 5'b00100);
+	 wire is_blt_at_pre = (q_imem[31:27] == 5'b00110);
+	 wire is_bex_at_pre = (q_imem[31:27] == 5'b10110);
+	 wire is_setx_at_pre = (q_imem[31:27] == 5'b10101);
+	 
+	 wire jump_instruction_at_pre = is_j_at_pre | is_bne_at_pre | is_jal_at_pre | is_jr_at_pre | is_blt_at_pre | is_bex_at_pre;
+	 
+	 wire jump_instruction_in_pipeline_DXMW = jump_instruction_at_D | jump_instruction_at_X | jump_instruction_at_M | jump_instruction_at_W; 
+	 wire [31:0] instruction_at_F = (jump_instruction_in_pipeline_DXMW & jump_instruction_at_pre) ? 32'd0 : q_imem;
+	 
+	 wire is_j_at_F = (instruction_at_F[31:27] == 5'b00001);
+	 wire is_bne_at_F = (instruction_at_F[31:27] == 5'b00010);
+	 wire is_jal_at_F = (instruction_at_F[31:27] == 5'b00011);
+	 wire is_jr_at_F = (instruction_at_F[31:27] == 5'b00100);
+	 wire is_blt_at_F = (instruction_at_F[31:27] == 5'b00110);
+	 wire is_bex_at_F = (instruction_at_F[31:27] == 5'b10110);
+	 wire is_setx_at_F = (instruction_at_F[31:27] == 5'b10101);
+	 
+	 wire jump_instruction_at_F = is_j_at_F | is_bne_at_F | is_jal_at_F | is_jr_at_F | is_blt_at_F | is_bex_at_F;
 	 
 	 // F/D stage
-	 wire [31:0] instruction_at_D;
-	 ThirtyTwoBitRegister FD_instruction_Latch(q_imem, clock, ~global_stall, reset, instruction_at_D);
+	 wire [31:0] instruction_at_D, current_PC_at_D;
+	 ThirtyTwoBitRegister FD_instruction_Latch(instruction_at_F, clock, ~global_stall, reset, instruction_at_D);
+	 ThirtyTwoBitRegister FD_PC_Latch(current_PC, clock, ~global_stall, reset, current_PC_at_D);
 	 
 	 // Decode stage
+	 wire is_j_at_D = (instruction_at_D[31:27] == 5'b00001);
+	 wire is_bne_at_D = (instruction_at_D[31:27] == 5'b00010);
+	 wire is_jal_at_D = (instruction_at_D[31:27] == 5'b00011);
+	 wire is_jr_at_D = (instruction_at_D[31:27] == 5'b00100);
+	 wire is_blt_at_D = (instruction_at_D[31:27] == 5'b00110);
+	 wire is_bex_at_D = (instruction_at_D[31:27] == 5'b10110);
+	 wire is_setx_at_D = (instruction_at_D[31:27] == 5'b10101);
+	 
+	 wire jump_instruction_at_D = is_j_at_D | is_bne_at_D | is_jal_at_D | is_jr_at_D | is_blt_at_D | is_bex_at_D;
+	 
 	 wire [4:0] opcode = instruction_at_D[31:27];
 	 wire R_type = (opcode == 5'b00000);
 	 wire I_type = (opcode == 5'b00101) | (opcode == 5'b00111) | (opcode == 5'b00010) | (opcode == 5'b00110) | (opcode == 5'b01000);
-	 wire JI_type = (opcode == 5'b00001) | (opcode == 5'b00011) | (opcode == 5'b10110) | (opcode == 5'b10101);
 	 wire JII_type = (opcode == 5'b00100);
-	 
+	
 	 wire [4:0] R_type_ALU_op = instruction_at_D[6:2];
 	 wire [4:0] shamt = instruction_at_D[11:7];
 	 wire [4:0] ALU_op = R_type ? R_type_ALU_op : 5'b00000;
@@ -125,7 +149,7 @@ module processor(
 	 wire [4:0] rd_register = instruction_at_D[26:22];
 	 
 	 assign ctrl_readRegA = instruction_at_D[21:17]; //RS_register
-	 assign ctrl_readRegB = R_type ? instruction_at_D[16:12] : rd_register; //RT_register
+	 assign ctrl_readRegB = is_bex_at_D ? 5'b11110 : R_type ? instruction_at_D[16:12] : rd_register; //RT_register
 	 
 	 wire [31:0] rs_val = data_readRegA;
 	 wire [31:0] rt_or_rd_val = data_readRegB;
@@ -134,11 +158,11 @@ module processor(
 	 
 	 wire [31:0] operandA = rs_val;
 	 wire [31:0] operandB = R_type ? rt_or_rd_val : sign_extended_immediate_val;
-	 wire [31:0] rd_val = I_type ? rt_or_rd_val : 32'd0; //take care of the sw instruction, need to load rd
+	 wire [31:0] rd_val = rt_or_rd_val; //take care of the sw, jr, bne, blt instruction, need to load rd; when instruction is bex, this value is rstatus value
 	 
 	 
 	 // D/X stage
-	 wire [31:0] operandA_at_X, operandB_at_X, instruction_at_X, rd_val_at_X;
+	 wire [31:0] operandA_at_X, operandB_at_X, instruction_at_X, rd_val_at_X, current_PC_at_X;
 	 wire [4:0] ALU_op_at_X, shamt_at_X, rd_register_at_X;
 	 
 	 ThirtyTwoBitRegister DX_RS_Latch(operandA, clock, ~global_stall, reset, operandA_at_X);
@@ -148,8 +172,19 @@ module processor(
 	 FiveBitRegister DX_RD_register_Latch(rd_register, clock, ~global_stall, reset, rd_register_at_X);
 	 ThirtyTwoBitRegister DX_instruction_Latch(instruction_at_D, clock, ~global_stall, reset, instruction_at_X);
 	 ThirtyTwoBitRegister DX_RD_val_Latch(rd_val, clock, ~global_stall, reset, rd_val_at_X);
+	 ThirtyTwoBitRegister DX_PC_Latch(current_PC_at_D, clock, ~global_stall, reset, current_PC_at_X);
 	
 	 // Execute stage
+	 wire is_j_at_X = (instruction_at_X[31:27] == 5'b00001);
+	 wire is_bne_at_X = (instruction_at_X[31:27] == 5'b00010);
+	 wire is_jal_at_X = (instruction_at_X[31:27] == 5'b00011);
+	 wire is_jr_at_X = (instruction_at_X[31:27] == 5'b00100);
+	 wire is_blt_at_X = (instruction_at_X[31:27] == 5'b00110);
+	 wire is_bex_at_X = (instruction_at_X[31:27] == 5'b10110);
+	 wire is_setx_at_X = (instruction_at_X[31:27] == 5'b10101);
+	 
+	 wire jump_instruction_at_X = is_j_at_X | is_bne_at_X | is_jal_at_X | is_jr_at_X | is_blt_at_X | is_bex_at_X;
+	 
 	 wire is_add = (instruction_at_X[31:27] == 5'b00000) & (instruction_at_X[6:2] == 5'b00000);
 	 wire is_addi = (instruction_at_X[31:27] == 5'b00101);
 	 wire is_sub = (instruction_at_X[31:27] == 5'b00000) & (instruction_at_X[6:2] == 5'b00001);
@@ -186,39 +221,97 @@ module processor(
 	 wire [31:0] compute_unit_output = exception_occurred ? rstatus_val : multdiv_ready ? multdiv_output : ALU_output;
 
 	 // X/M stage
-	 wire [31:0] compute_unit_output_at_M, instruction_at_M, rd_val_at_M;
+	 wire [31:0] compute_unit_output_at_M, instruction_at_M, rd_val_at_M, rs_val_at_M, current_PC_at_M;
 	 wire [4:0] register_to_write_at_M;
 	 ThirtyTwoBitRegister XM_instruction_Latch(instruction_at_X, clock, ~global_stall, reset, instruction_at_M);
 	 ThirtyTwoBitRegister XM_ALU_output_Latch(compute_unit_output, clock, ~global_stall, reset, compute_unit_output_at_M);
 	 FiveBitRegister XM_register_to_write_Latch(register_to_write, clock, ~global_stall, reset, register_to_write_at_M);
 	 ThirtyTwoBitRegister XM_RD_val_Latch(rd_val_at_X, clock, ~global_stall, reset, rd_val_at_M);
+	 ThirtyTwoBitRegister XM_RS_val_Latch(operandA_at_X, clock, ~global_stall, reset, rs_val_at_M);
+	 ThirtyTwoBitRegister XM_PC_Latch(current_PC_at_X, clock, ~global_stall, reset, current_PC_at_M);
 	 
 	 // Memory stage
+	 wire is_j_at_M = (instruction_at_M[31:27] == 5'b00001);
+	 wire is_bne_at_M = (instruction_at_M[31:27] == 5'b00010);
+	 wire is_jal_at_M = (instruction_at_M[31:27] == 5'b00011);
+	 wire is_jr_at_M = (instruction_at_M[31:27] == 5'b00100);
+	 wire is_blt_at_M = (instruction_at_M[31:27] == 5'b00110);
+	 wire is_bex_at_M = (instruction_at_M[31:27] == 5'b10110);
+	 wire is_setx_at_M = (instruction_at_M[31:27] == 5'b10101);
+	 
+	 wire jump_instruction_at_M = is_j_at_M | is_bne_at_M | is_jal_at_M | is_jr_at_M | is_blt_at_M | is_bex_at_M;
+	 
 	 wire is_sw = (instruction_at_M[31:27] == 5'b00111);
 	 wire is_lw = (instruction_at_M[31:27] == 5'b01000);
 	 assign wren = is_sw;
 	 assign address_dmem = compute_unit_output_at_M[11:0];
 	 assign data = rd_val_at_M;
 	 
-	 wire wait_for_sw_lw_next, wait_for_sw_lw;
+	 wire waiting_for_sw_lw_next, waiting_for_sw_lw;
 	 assign waiting_for_sw_lw_next = (~waiting_for_sw_lw) & (is_sw | is_lw);
 	 dffe_ref sw_lw_status_Latch(waiting_for_sw_lw, waiting_for_sw_lw_next, clock, is_sw|is_lw, reset);
 	 
 	 wire sw_lw_stall = waiting_for_sw_lw_next;
 	 wire [31:0] data_to_write = is_lw ? q_dmem : compute_unit_output_at_M;
 	 
-	 assign global_debug_out = q_dmem;
-	 
 	 // M/W stage
-	 wire [31:0] data_to_write_at_W, instruction_at_W;
+	 wire [31:0] data_to_write_at_W, instruction_at_W, rs_val_at_W, rd_val_at_W, current_PC_at_W;
 	 wire [4:0] register_to_write_at_W;
 	 ThirtyTwoBitRegister MW_instruction_Latch(instruction_at_M, clock, ~global_stall, reset, instruction_at_W);
 	 ThirtyTwoBitRegister MW_data_to_write_Latch(data_to_write, clock, ~global_stall, reset, data_to_write_at_W);
 	 FiveBitRegister MW_register_to_write_Latch(register_to_write_at_M, clock, ~global_stall, reset, register_to_write_at_W);
+	 ThirtyTwoBitRegister MW_RS_val_Latch(rs_val_at_M, clock, ~global_stall, reset, rs_val_at_W);
+	 ThirtyTwoBitRegister MW_RD_val_Latch(rd_val_at_M, clock, ~global_stall, reset, rd_val_at_W);
+	 ThirtyTwoBitRegister MW_PC_Latch(current_PC_at_M, clock, ~global_stall, reset, current_PC_at_W);
 	 
 	 // Write stage
-	 assign ctrl_writeReg = register_to_write_at_W;
-	 assign data_writeReg = data_to_write_at_W;
-	 assign ctrl_writeEnable = (instruction_at_W[31:27] == 5'b00000) | (instruction_at_W[31:27] == 5'b00101) | (instruction_at_W[31:27] == 5'b01000);
+	 assign ctrl_writeReg = is_jal_at_W ? 5'b11111 : is_setx_at_W ? 5'b11110 : register_to_write_at_W;
+	 assign data_writeReg = is_jal_at_W ? current_PC_at_W : is_setx_at_W ? {5'd0, instruction_at_W[26:0]} : data_to_write_at_W;
+	 wire nop_at_W = (instruction_at_W == 32'd0);
+	 assign ctrl_writeEnable = ((instruction_at_W[31:27] == 5'b00000) |
+									    (instruction_at_W[31:27] == 5'b00101) |
+										 (instruction_at_W[31:27] == 5'b01000) |
+										 (instruction_at_W[31:27] == 5'b00011) |
+										 (instruction_at_W[31:27] == 5'b10101)) &
+										(~nop_at_W);
+	 
+	 // PC update
+	 wire is_j_at_W = (instruction_at_W[31:27] == 5'b00001);
+	 wire is_bne_at_W = (instruction_at_W[31:27] == 5'b00010);
+	 wire is_jal_at_W = (instruction_at_W[31:27] == 5'b00011);
+	 wire is_jr_at_W = (instruction_at_W[31:27] == 5'b00100);
+	 wire is_blt_at_W = (instruction_at_W[31:27] == 5'b00110);
+	 wire is_bex_at_W = (instruction_at_W[31:27] == 5'b10110);
+	 wire is_setx_at_W = (instruction_at_W[31:27] == 5'b10101);
+	 
+	 wire jump_instruction_at_W = is_j_at_W | is_bne_at_W | is_jal_at_W | is_jr_at_W | is_blt_at_W | is_bex_at_W;
+	 
+	 wire is_rd_less_than_rs, is_rd_not_equal_rs, unused_overflow3;
+	 wire [31:0] unused_result;
+	 alu val_comparator(rd_val_at_W, rs_val_at_W, 5'b00000, 5'b00000,
+						       unused_result, is_rd_not_equal_rs, is_rd_less_than_rs, unused_overflow3);
+	 
+	 wire [31:0] PC_plus_one, PC_plus_one_plus_N, next_PC, current_PC;
+	 wire unused_isNotEqual1, unused_isLessThan1, unused_overflow1;
+	 wire unused_isNotEqual2, unused_isLessThan2, unused_overflow2;
+	 alu PC_adder(current_PC, 32'd1, 5'b00000, 5'b00000,
+						  PC_plus_one, unused_isNotEqual1, unused_isLessThan1, unused_overflow1);
+	 wire [31:0] immediate_N = {{15{instruction_at_W[16]}}, instruction_at_W[16:0]};
+	 alu PC_adder_jump(current_PC_at_W, immediate_N, 5'b00000, 5'b00000,
+						  PC_plus_one_plus_N, unused_isNotEqual2, unused_isLessThan2, unused_overflow2);
+	 
+	 wire rstatus_val_is_not_zero = ~(rd_val_at_W == 32'd0); // In the case that it is a bex instruciton, rd_val_at_W stores rstatus value
+	 
+	 assign next_PC = (is_j_at_W|is_jal_at_W|(is_bex_at_W & rstatus_val_is_not_zero)) ? instruction_at_W[11:0] : is_jr_at_W ? rd_val_at_W[11:0] :
+	                  ((is_bne_at_W & is_rd_not_equal_rs)|(is_blt_at_W & is_rd_less_than_rs)) ? PC_plus_one_plus_N : PC_plus_one;
+							
+	 wire jump_instruction_in_pipeline_FDXM = jump_instruction_at_F | jump_instruction_at_D | jump_instruction_at_X | jump_instruction_at_M;
+	 wire jump_stall = jump_instruction_in_pipeline_FDXM;
+	 ThirtyTwoBitRegister PC_register(next_PC, clock, ~(global_stall | jump_stall), reset, current_PC);
+	 wire [31:0] prev_PC;
+	 ThirtyTwoBitRegister prev_PC_register(current_PC, clock, ~(global_stall | jump_stall), reset, prev_PC);
+	 assign address_imem = jump_stall ? prev_PC : current_PC[11:0];
+	 
+	 assign global_debug_out = rd_val;
 	 
 endmodule 

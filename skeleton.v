@@ -9,7 +9,7 @@
  * inspect which signals the processor tries to assert when.
  */
 
-module skeleton(clock, reset, q_imem, data_writeReg, global_debug_out);
+module skeleton(clock, reset, q_imem, data_writeReg, global_debug_out, ctrl_writeEnable, ctrl_writeReg, ctrl_readRegA, ctrl_readRegB);
     input clock, reset;
 
     /** IMEM **/
@@ -40,8 +40,8 @@ module skeleton(clock, reset, q_imem, data_writeReg, global_debug_out);
 
     /** REGFILE **/
     // Instantiate your regfile
-    wire ctrl_writeEnable;
-    wire [4:0] ctrl_writeReg, ctrl_readRegA, ctrl_readRegB;
+    output ctrl_writeEnable;
+    output [4:0] ctrl_writeReg, ctrl_readRegA, ctrl_readRegB;
     output [31:0] data_writeReg;
     wire [31:0] data_readRegA, data_readRegB;
     regfile my_regfile(
