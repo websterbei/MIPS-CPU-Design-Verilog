@@ -102,12 +102,12 @@ module processor(
 	 wire is_sw_at_pre = (q_imem[31:27] == 5'b00111);
 	 wire is_lw_at_pre = (q_imem[31:27] == 5'b01000);
 	 wire is_addi_at_pre = (q_imem[31:27] == 5'b00101);
-	 wire read_first_register_at_pre = (R_type_at_pre | is_addi_at_pre | is_lw_at_pre | is_sw_at_pre | is_bne_at_pre | is_blt_at_pre | is_bex_at_pre); // All instructions that uses RS
-	 wire read_second_register_at_pre = (R_type_at_pre | is_bne_at_pre | is_blt_at_pre); // All instructions that uses RD or RT
-	 wire [4:0] first_register_read_at_pre = (R_type_at_pre | is_addi_at_pre | is_lw_at_pre | is_sw_at_pre | is_bne_at_pre | is_blt_at_pre) ? q_imem[21:17] :
-												 is_bex_at_pre ? 5'b11110 : 5'b00000;
+	 wire read_first_register_at_pre = (R_type_at_pre | is_addi_at_pre | is_lw_at_pre | is_sw_at_pre | is_bne_at_pre | is_blt_at_pre); // All instructions that uses RS
+	 wire read_second_register_at_pre = (R_type_at_pre | is_bne_at_pre | is_blt_at_pre | is_bex_at_pre | is_sw_at_X | is_jr_at_X); // All instructions that uses RD or RT
+	 wire [4:0] first_register_read_at_pre = (R_type_at_pre | is_addi_at_pre | is_lw_at_pre | is_sw_at_pre | is_bne_at_pre | is_blt_at_pre) ? q_imem[21:17] : 5'b00000;
 	 wire [4:0] second_register_read_at_pre = R_type_at_pre ? q_imem[16:12] :
-												  (is_sw_at_pre | is_bne_at_pre | is_blt_at_pre) ? q_imem[26:22] : 5'b00000;	 
+												         (is_sw_at_pre | is_bne_at_pre | is_blt_at_pre | is_sw_at_X | is_jr_at_X) ? q_imem[26:22] :
+												         is_bex_at_pre ? 5'b11110 : 5'b00000;	 
 	 
 	 wire read_after_lw_stall = is_lw_at_D & ((read_first_register_at_pre & (first_register_read_at_pre == instruction_at_D[26:22])) |
 										 (read_second_register_at_pre & (second_register_read_at_pre == instruction_at_D[26:22]))) ;
@@ -201,12 +201,12 @@ module processor(
 	 wire R_type_at_X = (instruction_at_X[31:27] == 5'b00000);
 	 wire is_sw_at_X = (instruction_at_X[31:27] == 5'b00111);
 	 wire is_lw_at_X = (instruction_at_X[31:27] == 5'b01000);
-	 wire read_first_register = (R_type_at_X | is_addi | is_lw_at_X | is_sw_at_X | is_bne_at_X | is_blt_at_X | is_bex_at_X); // All instructions that uses RS
-	 wire read_second_register = (R_type_at_X | is_bne_at_X | is_blt_at_X); // All instructions that uses RD or RT
-	 wire [4:0] first_register_read = (R_type_at_X | is_addi | is_lw_at_X | is_sw_at_X | is_bne_at_X | is_blt_at_X) ? instruction_at_X[21:17] :
-												 is_bex_at_X ? 5'b11110 : 5'b00000;
+	 wire read_first_register = (R_type_at_X | is_addi | is_lw_at_X | is_sw_at_X | is_bne_at_X | is_blt_at_X); // All instructions that uses RS
+	 wire read_second_register = (R_type_at_X | is_bne_at_X | is_blt_at_X | is_bex_at_X | is_sw_at_X | is_jr_at_X); // All instructions that uses RD or RT
+	 wire [4:0] first_register_read = (R_type_at_X | is_addi | is_lw_at_X | is_sw_at_X | is_bne_at_X | is_blt_at_X) ? instruction_at_X[21:17] : 5'b00000;
 	 wire [4:0] second_register_read = R_type_at_X ? instruction_at_X[16:12] :
-												  (is_sw_at_X | is_bne_at_X | is_blt_at_X) ? instruction_at_X[26:22] : 5'b00000;	 
+												  (is_sw_at_X | is_bne_at_X | is_blt_at_X | is_sw_at_X | is_jr_at_X) ? instruction_at_X[26:22] :
+												  is_bex_at_X ? 5'b11110 : 5'b00000;	 
 	 
 	 wire [31:0] operandA_at_X = (read_first_register & (first_register_read == register_to_write_at_M) & write_enable_at_M & (~is_lw)) ? compute_unit_output_at_M :
 										  (read_first_register & (first_register_read == register_to_write_at_W) & ctrl_writeEnable) ? data_to_write_at_W : raw_operandA_at_X;
@@ -262,14 +262,16 @@ module processor(
 												  multdiv_ready ? multdiv_output : ALU_output;
 
 	 //Bypass logic for rd_val								  
-	 wire [31:0] bypass_rd_val_at_X = ((read_second_register | is_sw_at_X | is_jr_at_X) & (second_register_read == register_to_write_at_W) & ctrl_writeEnable) ? data_to_write_at_W : rd_val_at_X;
+    //	 wire [31:0] bypass_rd_val_at_X =((read_second_register | is_sw_at_X | is_jr_at_X) & (second_register_read == register_to_write_at_M) & write_enable_at_M & (~is_lw)) ? compute_unit_output_at_M :
+    //												((read_second_register | is_sw_at_X | is_jr_at_X) & (second_register_read == register_to_write_at_W) & ctrl_writeEnable) ? data_to_write_at_W : rd_val_at_X;
+	 
 	 // X/M stage
 	 wire [31:0] compute_unit_output_at_M, instruction_at_M, rd_val_at_M, rs_val_at_M, current_PC_at_M;
 	 wire [4:0] register_to_write_at_M;
 	 ThirtyTwoBitRegister XM_instruction_Latch(instruction_at_X, clock, ~global_stall, reset, instruction_at_M);
 	 ThirtyTwoBitRegister XM_ALU_output_Latch(compute_unit_output, clock, ~global_stall, reset, compute_unit_output_at_M);
 	 FiveBitRegister XM_register_to_write_Latch(register_to_write, clock, ~global_stall, reset, register_to_write_at_M);
-	 ThirtyTwoBitRegister XM_RD_val_Latch(bypass_rd_val_at_X, clock, ~global_stall, reset, rd_val_at_M);
+	 ThirtyTwoBitRegister XM_RD_val_Latch(operandB_at_X, clock, ~global_stall, reset, rd_val_at_M);
 	 ThirtyTwoBitRegister XM_RS_val_Latch(operandA_at_X, clock, ~global_stall, reset, rs_val_at_M);
 	 ThirtyTwoBitRegister XM_PC_Latch(current_PC_at_X, clock, ~global_stall, reset, current_PC_at_M);
 	 
@@ -347,26 +349,20 @@ module processor(
 						       unused_result, is_rd_not_equal_rs, is_rd_less_than_rs, unused_overflow3);
 	 
 	 wire [31:0] PC_plus_one, PC_plus_one_plus_N, next_PC, current_PC;
-	 wire unused_isNotEqual1, unused_isLessThan1, unused_overflow1;
-	 wire unused_isNotEqual2, unused_isLessThan2, unused_overflow2;
-	 alu PC_adder(current_PC, 32'd1, 5'b00000, 5'b00000,
-						  PC_plus_one, unused_isNotEqual1, unused_isLessThan1, unused_overflow1);
+	 wire unused_overflow1, unused_overflow2;
+	 ThirtyTwoBitAdder PC_adder(current_PC, 32'd0, 1'b1, PC_plus_one, unused_overflow1);
 	 wire [31:0] immediate_N = {{15{instruction_at_W[16]}}, instruction_at_W[16:0]};
-	 alu PC_adder_jump(current_PC_at_W, immediate_N, 5'b00000, 5'b00000,
-						  PC_plus_one_plus_N, unused_isNotEqual2, unused_isLessThan2, unused_overflow2);
+	 ThirtyTwoBitAdder PC_adder_jump(current_PC_at_W, immediate_N, 1'b1, PC_plus_one_plus_N, unused_overflow2);
 	 
 	 wire rstatus_val_is_not_zero = ~(rd_val_at_W == 32'd0); // In the case that it is a bex instruciton, rd_val_at_W stores rstatus value
 	 
-	 assign next_PC = (is_j_at_W|is_jal_at_W|(is_bex_at_W & rstatus_val_is_not_zero)) ? instruction_at_W[11:0] : is_jr_at_W ? rd_val_at_W[11:0] :
+	 assign next_PC = (is_j_at_W|is_jal_at_W|(is_bex_at_W & rstatus_val_is_not_zero)) ? instruction_at_W : is_jr_at_W ? rd_val_at_W :
 	                  ((is_bne_at_W & is_rd_not_equal_rs)|(is_blt_at_W & is_rd_less_than_rs)) ? PC_plus_one_plus_N : PC_plus_one;
 							
 	 wire jump_instruction_in_pipeline_FDXM = jump_instruction_at_F | jump_instruction_at_D | jump_instruction_at_X | jump_instruction_at_M;
 	 wire jump_stall = jump_instruction_in_pipeline_FDXM;
-	 ThirtyTwoBitRegister PC_register(next_PC, clock, ~(global_stall | jump_stall | read_after_lw_stall), reset, current_PC);
-	 wire [31:0] prev_PC;
-	 ThirtyTwoBitRegister prev_PC_register(current_PC, clock, ~(global_stall | jump_stall | read_after_lw_stall), reset, prev_PC);
-	 assign address_imem = (jump_stall | multdiv_stall | read_after_lw_stall) ? prev_PC : current_PC[11:0];
-	 
-	 assign global_debug_out = operandA_at_X;
+	 ThirtyTwoBitRegister PC_register(address_imem, clock, ~(global_stall | jump_stall | read_after_lw_stall), reset, current_PC);
+	 assign address_imem = reset ? 12'd0 : (jump_stall | multdiv_stall | read_after_lw_stall) ? current_PC[11:0] : next_PC[11:0];
+	 assign global_debug_out = instruction_at_D;
 	 
 endmodule 
