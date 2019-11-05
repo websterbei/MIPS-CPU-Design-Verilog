@@ -2,12 +2,19 @@
 \usepackage{graphicx}
 \usepackage{listings}
 \lstset{breaklines=true}
-\title{Technical Report for MIPS Processor Design}
+\title{ECE 350: Digital Systems Project Checkpoint 4}
 \author{Webster Bei Yijie, yb44}
 \begin{document}
 	\maketitle
-	\tableofcontents
-	\newpage
+	By submitting this \LaTeX{} document, I affirm that
+\begin{enumerate}
+    \item I understand that each \texttt{git} commit I create in this repository is a submission
+    \item I affirm that each submission complies with the Duke Community Standard and the guidelines set forth for this assignment
+    \item I further acknowledge that any content not included in this commit under the version control system cannot be considered as a part of my submission.
+    \item Finally, I understand that a submission is considered submitted when it has been pushed to the server.
+\end{enumerate}
+\tableofcontents
+\newpage
 	\section{Introduction}
 	A five-stage MIPS ISA compatible microprocessor is implemented in Verilog using Intel Quartus. This report details the process that it took to implement the processor, and dive deep into the complications involved in dealing with various challenges encountered during the process. In the first section, I will briefly go through the different high-level components that the processor is made of. In the second section, I will go through the different groups of instructions that were implemented and how they were implemented. I will also talk about the way that testing was done and challenges that I encountered during the implementation of this microprocessor.  
 	\section{Components}
