@@ -69,8 +69,7 @@ module processor(
     ctrl_readRegB,                  // O: Register to read from port B of regfile
     data_writeReg,                  // O: Data to write to for regfile
     data_readRegA,                  // I: Data from port A of regfile
-    data_readRegB,                   // I: Data from port B of regfile
-	 global_debug_out
+    data_readRegB                   // I: Data from port B of regfile
 );
     // Control signals
     input clock, reset;
@@ -92,8 +91,6 @@ module processor(
     input [31:0] data_readRegA, data_readRegB;
 
     /* YOUR CODE STARTS HERE */
-	 output [31:0] global_debug_out;
-	 
 	 
 	 wire global_stall = multdiv_stall | (sw_lw_stall & (~nop_at_D));
 	 
@@ -363,6 +360,5 @@ module processor(
 	 wire jump_stall = jump_instruction_in_pipeline_FDXM;
 	 ThirtyTwoBitRegister PC_register(address_imem, clock, ~(global_stall | jump_stall | read_after_lw_stall), reset, current_PC);
 	 assign address_imem = reset ? 12'd0 : (jump_stall | multdiv_stall | read_after_lw_stall) ? current_PC[11:0] : next_PC[11:0];
-	 assign global_debug_out = instruction_at_D;
 	 
 endmodule 
