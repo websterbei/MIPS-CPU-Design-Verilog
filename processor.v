@@ -261,13 +261,15 @@ module processor(
 												  is_setx_at_X ? {5'd0, instruction_at_X[26:0]} :
 												  multdiv_ready ? multdiv_output : ALU_output;
 
+	 //Bypass logic for rd_val								  
+	 wire [31:0] bypass_rd_val_at_X = ((read_second_register | is_sw_at_X | is_jr_at_X) & (second_register_read == register_to_write_at_W) & ctrl_writeEnable) ? data_to_write_at_W : rd_val_at_X;
 	 // X/M stage
 	 wire [31:0] compute_unit_output_at_M, instruction_at_M, rd_val_at_M, rs_val_at_M, current_PC_at_M;
 	 wire [4:0] register_to_write_at_M;
 	 ThirtyTwoBitRegister XM_instruction_Latch(instruction_at_X, clock, ~global_stall, reset, instruction_at_M);
 	 ThirtyTwoBitRegister XM_ALU_output_Latch(compute_unit_output, clock, ~global_stall, reset, compute_unit_output_at_M);
 	 FiveBitRegister XM_register_to_write_Latch(register_to_write, clock, ~global_stall, reset, register_to_write_at_M);
-	 ThirtyTwoBitRegister XM_RD_val_Latch(rd_val_at_X, clock, ~global_stall, reset, rd_val_at_M);
+	 ThirtyTwoBitRegister XM_RD_val_Latch(bypass_rd_val_at_X, clock, ~global_stall, reset, rd_val_at_M);
 	 ThirtyTwoBitRegister XM_RS_val_Latch(operandA_at_X, clock, ~global_stall, reset, rs_val_at_M);
 	 ThirtyTwoBitRegister XM_PC_Latch(current_PC_at_X, clock, ~global_stall, reset, current_PC_at_M);
 	 
@@ -363,8 +365,8 @@ module processor(
 	 ThirtyTwoBitRegister PC_register(next_PC, clock, ~(global_stall | jump_stall | read_after_lw_stall), reset, current_PC);
 	 wire [31:0] prev_PC;
 	 ThirtyTwoBitRegister prev_PC_register(current_PC, clock, ~(global_stall | jump_stall | read_after_lw_stall), reset, prev_PC);
-	 assign address_imem = jump_stall ? prev_PC : read_after_lw_stall ? prev_PC : current_PC[11:0];
+	 assign address_imem = (jump_stall | multdiv_stall | read_after_lw_stall) ? prev_PC : current_PC[11:0];
 	 
-	 assign global_debug_out = prev_PC;
+	 assign global_debug_out = operandA_at_X;
 	 
 endmodule 
